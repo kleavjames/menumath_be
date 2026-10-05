@@ -65,12 +65,57 @@ export class UsersService {
     };
   }
 
+  async findByUsername(username: string) {
+    return this.prisma.user.findUnique({
+      where: { username },
+      include: {
+        memberships: {
+          include: {
+            business: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findAuthIdentity(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        tokenVersion: true,
+      },
+    });
+  }
+
+  async bumpTokenVersion(id: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        tokenVersion: {
+          increment: 1,
+        },
+      },
+      select: {
+        id: true,
+        username: true,
+        tokenVersion: true,
+      },
+    });
+  }
+
   async findAll(): Promise<PublicUser[]> {
     const users = await this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
     });
 
     return users.map((user) => this.toPublicUser(user));
+  }
+
+  toPublicUser(user: User): PublicUser {
+    const { passwordHash: _, ...publicUser } = user;
+    return publicUser;
   }
 
   async findOne(id: string) {
@@ -137,10 +182,5 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
-  }
-
-  private toPublicUser(user: User): PublicUser {
-    const { passwordHash: _, ...publicUser } = user;
-    return publicUser;
   }
 }

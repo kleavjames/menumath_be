@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { BusinessService } from './business.service.js';
 import { BusinessController } from './business.controller.js';
+import { BusinessService } from './business.service.js';
 
 @Module({
   controllers: [BusinessController],

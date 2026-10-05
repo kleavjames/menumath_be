@@ -5,7 +5,6 @@ import type {
 } from '../../generated/prisma/client.js';
 
 export class CreateBusinessDto {
-  ownerUserId: string;
   name: string;
   type: BusinessType;
   currency: Currency;

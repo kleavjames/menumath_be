@@ -12,15 +12,13 @@ import { UpdateBusinessDto } from './dto/update-business.dto.js';
 export class BusinessService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createForOwner(createBusinessDto: CreateBusinessDto) {
+  async createForOwner(ownerUserId: string, createBusinessDto: CreateBusinessDto) {
     const owner = await this.prisma.user.findUnique({
-      where: { id: createBusinessDto.ownerUserId },
+      where: { id: ownerUserId },
     });
 
     if (!owner) {
-      throw new NotFoundException(
-        `User ${createBusinessDto.ownerUserId} not found`,
-      );
+      throw new NotFoundException(`User ${ownerUserId} not found`);
     }
 
     return this.prisma.business.create({
@@ -32,7 +30,7 @@ export class BusinessService {
         unitSystem: createBusinessDto.unitSystem,
         members: {
           create: {
-            userId: createBusinessDto.ownerUserId,
+            userId: ownerUserId,
             role: MemberRole.OWNER,
           },
         },
