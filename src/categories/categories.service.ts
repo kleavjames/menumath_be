@@ -60,14 +60,11 @@ export class CategoriesService {
     const category = await this.getCategoryOrThrow(id);
     await this.ensureOwnerMembership(category.businessId, userId);
 
-    const nextName = updateCategoryDto.name ?? category.name;
-    const nextType = updateCategoryDto.type ?? category.type;
-
-    if (nextName !== category.name || nextType !== category.type) {
+    if (updateCategoryDto.name !== category.name) {
       await this.ensureNameAvailable(
         category.businessId,
-        nextType,
-        nextName,
+        category.type,
+        updateCategoryDto.name,
         id,
       );
     }
@@ -76,7 +73,6 @@ export class CategoriesService {
       where: { id },
       data: {
         name: updateCategoryDto.name,
-        type: updateCategoryDto.type,
       },
     });
   }
