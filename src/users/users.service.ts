@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -16,6 +17,16 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createOwnerAccount(createOwnerAccountDto: CreateOwnerAccountDto) {
+    const { password } = createOwnerAccountDto;
+
+    if (!password || password.trim().length === 0) {
+      throw new BadRequestException('Password must not be empty');
+    }
+
+    if (password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
     const existingUser = await this.prisma.user.findUnique({
       where: { username: createOwnerAccountDto.username },
     });
@@ -24,7 +35,7 @@ export class UsersService {
       throw new ConflictException('Username is already taken');
     }
 
-    const passwordHash = await hashPassword(createOwnerAccountDto.password);
+    const passwordHash = await hashPassword(password);
     const { business } = createOwnerAccountDto;
 
     const result = await this.prisma.$transaction(async (tx) => {
