@@ -62,6 +62,12 @@ Do not commit production secrets. On your deployment platform, set:
 
 Run migrations against Neon before or during deploy, for example `npx prisma migrate deploy`.
 
+### Render
+
+- **Build command:** `npm install && npm run build` (runs `prisma generate` then `nest build`)
+- **Start command:** `npm run start:prod`
+- Set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in the Render dashboard. Optionally add a **pre-deploy** or release step: `npx prisma migrate deploy`.
+
 ## Compile and run the project
 
 ```bash
