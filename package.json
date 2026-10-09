@@ -23,6 +23,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f postgres",
+    "dev:local": "docker compose up -d && npm run db:migrate && npm run start:dev",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",

@@ -4,6 +4,10 @@ services:
     container_name: menumath_postgres
     env_file:
       - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-menumath}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-menumath}
+      POSTGRES_DB: ${POSTGRES_DB:-menumath}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
