@@ -31,6 +31,37 @@
 $ npm install
 ```
 
+## Database: local Docker vs production Neon
+
+The app always reads **`DATABASE_URL`** at runtime. How you set it depends on where you run:
+
+| Environment | Postgres | What to set |
+|-------------|----------|-------------|
+| **Local dev** | Docker Compose (`npm run docker:up`) | `DATABASE_URL` pointing at `localhost` (see `.env.example`) |
+| **Production** | [Neon](https://neon.tech) | `DATABASE_URL` (pooled) on your host; `DATABASE_URL_UNPOOLED` (direct) for migrations |
+
+### Local development
+
+1. Copy `.env.example` → `.env` (or `.env.local.example` → `.env.local` if `.env` already has Neon URLs from `neon env pull`).
+2. Start Postgres and apply migrations, then run the API:
+
+```bash
+npm run dev:local
+```
+
+Or step by step: `npm run docker:up` → `npm run db:migrate` → `npm run start:dev`.
+
+Env load order: `.env` → `.env.development` (if present) → `.env.local` (wins). Prisma Migrate uses the same local URL when `DATABASE_URL` is `localhost`; otherwise it prefers `DATABASE_URL_UNPOOLED` for Neon.
+
+### Production
+
+Do not commit production secrets. On your deployment platform, set:
+
+- `DATABASE_URL` — Neon **pooled** connection string (app / Prisma Client)
+- `DATABASE_URL_UNPOOLED` — Neon **direct** string (for `prisma migrate deploy` in CI or release)
+
+Run migrations against Neon before or during deploy, for example `npx prisma migrate deploy`.
+
 ## Compile and run the project
 
 ```bash
