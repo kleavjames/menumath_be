@@ -64,9 +64,17 @@ Run migrations against Neon before or during deploy, for example `npx prisma mig
 
 ### Render
 
-- **Build command:** `npm install && npm run build` (runs `prisma generate` then `nest build`)
-- **Start command:** `npm run start:prod`
-- Set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in the Render dashboard. Optionally add a **pre-deploy** or release step: `npx prisma migrate deploy`.
+Set **`DATABASE_URL`** (Neon pooled) and **`DATABASE_URL_UNPOOLED`** (Neon direct) in the service **Environment** tab.
+
+| Setting | Command |
+|---------|---------|
+| **Build command** | `npm install && npm run build` |
+| **Pre-deploy command** | `npm run db:migrate:deploy` |
+| **Start command** | `npm run start:prod` |
+
+The pre-deploy step applies Prisma migrations to Neon. Without it, tables like `User` do not exist and sign-up returns **500** (`P2021`).
+
+After changing env vars or adding the pre-deploy command, trigger a **manual deploy** once so migrations run before traffic hits the new release.
 
 ## Compile and run the project
 
