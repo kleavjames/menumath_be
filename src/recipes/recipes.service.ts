@@ -4,10 +4,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CategoryType, MemberRole, Unit } from '../generated/prisma/client.js';
+import {
+  CategoryType,
+  MemberRole,
+  Prisma,
+  Unit,
+} from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateRecipeDto } from './dto/create-recipe.dto.js';
 import type { CreateUpdateRecipeIngredientDto } from './dto/create-update-recipe-ingredient.dto.js';
+import type { RecipeStepDto } from './dto/recipe-step.dto.js';
 import { UpdateRecipeDto } from './dto/update-recipe.dto.js';
 
 const recipeWithIngredientsInclude = {
@@ -32,6 +38,7 @@ export class RecipesService {
       profit,
       margin,
       ingredients,
+      steps,
     } = createRecipeDto;
 
     if (!businessId) {
@@ -58,6 +65,9 @@ export class RecipesService {
     }
     await this.ensureRecipeIngredientsForBusiness(businessId, ingredients);
 
+    const recipeSteps = this.normalizeSteps(steps ?? []);
+    this.ensureValidSteps(recipeSteps);
+
     const recipeIngredients = ingredients.map(
       ({ ingredientId, quantity, pricePerUnit, unit }) => ({
         ingredientId,
@@ -78,6 +88,7 @@ export class RecipesService {
         recipeCost,
         profit,
         margin,
+        steps: this.toRecipeStepsJson(recipeSteps),
         ingredients: {
           create: recipeIngredients,
         },
@@ -119,7 +130,13 @@ export class RecipesService {
       );
     }
 
-    const { ingredients, ...recipeFields } = updateRecipeDto;
+    const { ingredients, steps, ...recipeFields } = updateRecipeDto;
+
+    let recipeSteps: RecipeStepDto[] | undefined;
+    if (steps !== undefined) {
+      recipeSteps = this.normalizeSteps(steps);
+      this.ensureValidSteps(recipeSteps);
+    }
 
     if (ingredients !== undefined) {
       if (!ingredients.length) {
@@ -148,6 +165,9 @@ export class RecipesService {
         recipeCost: recipeFields.recipeCost,
         profit: recipeFields.profit,
         margin: recipeFields.margin,
+        ...(recipeSteps !== undefined
+          ? { steps: this.toRecipeStepsJson(recipeSteps) }
+          : {}),
         ...(ingredients !== undefined
           ? {
               ingredients: {
@@ -175,6 +195,34 @@ export class RecipesService {
     return this.prisma.recipe.delete({
       where: { id },
     });
+  }
+
+  private toRecipeStepsJson(steps: RecipeStepDto[]): Prisma.InputJsonValue {
+    return steps.map(({ order, text }) => ({ order, text }));
+  }
+
+  private normalizeSteps(steps: RecipeStepDto[]): RecipeStepDto[] {
+    return [...steps].sort((a, b) => a.order - b.order);
+  }
+
+  private ensureValidSteps(steps: RecipeStepDto[]) {
+    for (const step of steps) {
+      if (!Number.isInteger(step.order) || step.order < 1) {
+        throw new BadRequestException(
+          'Each step order must be a positive integer starting at 1',
+        );
+      }
+      if (typeof step.text !== 'string' || !step.text.trim()) {
+        throw new BadRequestException('Each step must include non-empty text');
+      }
+    }
+
+    const orders = steps.map((step) => step.order);
+    if (new Set(orders).size !== orders.length) {
+      throw new BadRequestException(
+        'Recipe steps must have unique order values',
+      );
+    }
   }
 
   private ensureUniqueRecipeIngredients(

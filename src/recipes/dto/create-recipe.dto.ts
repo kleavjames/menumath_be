@@ -1,4 +1,5 @@
 import { CreateUpdateRecipeIngredientDto } from './create-update-recipe-ingredient.dto.js';
+import { RecipeStepDto } from './recipe-step.dto.js';
 
 export class CreateRecipeDto {
   businessId: string;
@@ -11,4 +12,5 @@ export class CreateRecipeDto {
   profit: number;
   margin: number;
   ingredients: CreateUpdateRecipeIngredientDto[];
+  steps?: RecipeStepDto[];
 }
