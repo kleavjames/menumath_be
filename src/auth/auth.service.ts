@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { verifyPassword } from '../common/password.js';
 import { UsersService } from '../users/users.service.js';
+import { AuthSessionsService } from './auth-sessions.service.js';
 import { SignInDto } from './dto/sign-in.dto.js';
 import { SignUpDto } from './dto/sign-up.dto.js';
 import type { JwtPayload } from './types/auth-user.js';
@@ -10,6 +11,7 @@ import type { JwtPayload } from './types/auth-user.js';
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
+    private readonly authSessionsService: AuthSessionsService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -21,10 +23,12 @@ export class AuthService {
       throw new UnauthorizedException('Unable to issue access token');
     }
 
+    const session = await this.authSessionsService.createForUser(identity.id);
+
     const accessToken = await this.createAccessToken({
       sub: identity.id,
       username: identity.username,
-      tokenVersion: identity.tokenVersion,
+      sid: session.id,
     });
 
     return {
@@ -49,10 +53,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid username or password');
     }
 
+    const session = await this.authSessionsService.createForUser(user.id);
+
     const accessToken = await this.createAccessToken({
       sub: user.id,
       username: user.username,
-      tokenVersion: user.tokenVersion,
+      sid: session.id,
     });
 
     const { passwordHash: _, ...publicUser } = user;
@@ -63,8 +69,8 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string) {
-    await this.usersService.bumpTokenVersion(userId);
+  async logout(userId: string, sessionId: string) {
+    await this.authSessionsService.revoke(sessionId, userId);
 
     return {
       message: 'Signed out successfully',
