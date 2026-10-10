@@ -26,6 +26,7 @@
     "dev:local": "docker compose up -d && npm run db:migrate && npm run start:dev",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },

@@ -1,0 +1,15 @@
+# Optional Render Blueprint — adjust name/region/plan as needed.
+services:
+  - type: web
+    name: menumath-be
+    runtime: node
+    buildCommand: npm install && npm run build
+    preDeployCommand: npm run db:migrate:deploy
+    startCommand: npm run start:prod
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
