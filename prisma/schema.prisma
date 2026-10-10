@@ -193,6 +193,7 @@ model RecipeIngredient {
   recipeId     String
   ingredientId String
   quantity     Decimal @db.Decimal(12, 4)
+  pricePerUnit Decimal @db.Decimal(12, 4)
   unit         Unit
 
   recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
