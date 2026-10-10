@@ -95,23 +95,6 @@ export class UsersService {
       select: {
         id: true,
         username: true,
-        tokenVersion: true,
-      },
-    });
-  }
-
-  async bumpTokenVersion(id: string) {
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        tokenVersion: {
-          increment: 1,
-        },
-      },
-      select: {
-        id: true,
-        username: true,
-        tokenVersion: true,
       },
     });
   }
