@@ -4,11 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  CategoryType,
-  MemberRole,
-  Unit,
-} from '../generated/prisma/client.js';
+import { CategoryType, MemberRole, Unit } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateIngredientDto } from './dto/create-ingredient.dto.js';
 import { UpdateIngredientDto } from './dto/update-ingredient.dto.js';
@@ -28,6 +24,17 @@ export class IngredientsService {
       itemPrice,
       usableCostPerItem,
     } = createIngredientDto;
+
+    if (!businessId) {
+      throw new BadRequestException(
+        'Cannot create ingredient: Missing required field',
+      );
+    }
+    if (!categoryId) {
+      throw new BadRequestException(
+        'Failed to create ingredient: Need to select a category',
+      );
+    }
 
     this.ensureValidUnit(itemSizeUnit);
     await this.ensureOwnerMembership(businessId, userId);
@@ -141,9 +148,7 @@ export class IngredientsService {
     }
 
     if (category.type !== CategoryType.INGREDIENT) {
-      throw new BadRequestException(
-        'Category must be of type INGREDIENT',
-      );
+      throw new BadRequestException('Category must be of type INGREDIENT');
     }
 
     return category;
