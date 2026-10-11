@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -55,7 +56,7 @@ export class IngredientsService {
   }
 
   async findAll(userId: string, businessId: string, categoryId?: string) {
-    await this.ensureOwnerMembership(businessId, userId);
+    await this.ensureMembership(businessId, userId);
 
     return this.prisma.ingredient.findMany({
       where: {
@@ -68,7 +69,7 @@ export class IngredientsService {
 
   async findOne(userId: string, id: string) {
     const ingredient = await this.getIngredientOrThrow(id);
-    await this.ensureOwnerMembership(ingredient.businessId, userId);
+    await this.ensureMembership(ingredient.businessId, userId);
     return ingredient;
   }
 
@@ -162,7 +163,7 @@ export class IngredientsService {
     }
   }
 
-  private async ensureOwnerMembership(businessId: string, userId: string) {
+  private async ensureMembership(businessId: string, userId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
     });
@@ -180,7 +181,17 @@ export class IngredientsService {
       },
     });
 
-    if (!membership || membership.role !== MemberRole.OWNER) {
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this business');
+    }
+
+    return membership;
+  }
+
+  private async ensureOwnerMembership(businessId: string, userId: string) {
+    const membership = await this.ensureMembership(businessId, userId);
+
+    if (membership.role !== MemberRole.OWNER) {
       throw new ConflictException('User is not an owner of this business');
     }
 

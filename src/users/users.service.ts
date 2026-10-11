@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -105,6 +106,50 @@ export class UsersService {
     });
 
     return users.map((user) => this.toPublicUser(user));
+  }
+
+  async findByBusiness(userId: string, businessId: string) {
+    if (!businessId.trim()) {
+      throw new BadRequestException('businessId is required');
+    }
+
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+    });
+
+    if (!business) {
+      throw new NotFoundException(`Business ${businessId} not found`);
+    }
+
+    const membership = await this.prisma.businessMember.findUnique({
+      where: {
+        businessId_userId: {
+          businessId,
+          userId,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this business');
+    }
+
+    const members = await this.prisma.businessMember.findMany({
+      where: { businessId },
+      include: {
+        user: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return members.map((member) => {
+      const { user, ...membershipFields } = member;
+
+      return {
+        ...this.toPublicUser(user),
+        membership: membershipFields,
+      };
+    });
   }
 
   toPublicUser(user: User): PublicUser {

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,6 +7,7 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -20,7 +22,14 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll() {
+  findAll(
+    @CurrentUser() user: AuthUser,
+    @Query('businessId') businessId?: string,
+  ) {
+    if (businessId) {
+      return this.usersService.findByBusiness(user.id, businessId);
+    }
+
     return this.usersService.findAll();
   }
 
@@ -28,6 +37,22 @@ export class UsersController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch()
+  updateMine(
+    @CurrentUser() user: AuthUser,
+    @Query('mine') mine: string | undefined,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    if (mine !== 'true') {
+      throw new BadRequestException(
+        'Cannot update different user than the current one',
+      );
+    }
+
+    return this.usersService.update(user.id, updateUserDto);
   }
 
   @UseGuards(JwtAuthGuard)
