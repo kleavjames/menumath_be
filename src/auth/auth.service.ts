@@ -31,9 +31,13 @@ export class AuthService {
       sid: session.id,
     });
 
+    const { members: _, ...business } = account.business;
+
     return {
       accessToken,
-      ...account,
+      user: account.user,
+      membership: account.membership,
+      business,
     };
   }
 
@@ -53,6 +57,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid username or password');
     }
 
+    const membership = [...user.memberships].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    )[0];
+
+    if (!membership) {
+      throw new UnauthorizedException('User is not a member of a business');
+    }
+
     const session = await this.authSessionsService.createForUser(user.id);
 
     const accessToken = await this.createAccessToken({
@@ -61,11 +73,18 @@ export class AuthService {
       sid: session.id,
     });
 
-    const { passwordHash: _, ...publicUser } = user;
+    const { business, ...membershipWithoutBusiness } = membership;
+    const {
+      passwordHash: _,
+      memberships: __,
+      ...publicUser
+    } = user;
 
     return {
       accessToken,
       user: publicUser,
+      membership: membershipWithoutBusiness,
+      business,
     };
   }
 
