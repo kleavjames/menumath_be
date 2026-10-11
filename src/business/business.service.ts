@@ -85,13 +85,12 @@ export class BusinessService {
     return business;
   }
 
-  async findByOwner(ownerUserId: string) {
+  async findByMember(userId: string) {
     return this.prisma.business.findMany({
       where: {
         members: {
           some: {
-            userId: ownerUserId,
-            role: MemberRole.OWNER,
+            userId,
           },
         },
       },
