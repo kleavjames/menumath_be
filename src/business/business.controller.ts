@@ -36,7 +36,7 @@ export class BusinessController {
     @Query('mine') mine?: string,
   ) {
     if (mine === 'true') {
-      return this.businessService.findByOwner(user.id);
+      return this.businessService.findByMember(user.id);
     }
 
     return this.businessService.findAll();
