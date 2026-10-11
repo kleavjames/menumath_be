@@ -8,9 +8,10 @@ import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { IngredientsModule } from './ingredients/ingredients.module.js';
 import { RecipesModule } from './recipes/recipes.module.js';
+import { InvitationModule } from './invitation/invitation.module.js';
 
 @Module({
-  imports: [PrismaModule, UsersModule, BusinessModule, AuthModule, CategoriesModule, IngredientsModule, RecipesModule],
+  imports: [PrismaModule, UsersModule, BusinessModule, AuthModule, CategoriesModule, IngredientsModule, RecipesModule, InvitationModule],
   controllers: [AppController],
   providers: [AppService],
 })

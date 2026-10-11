@@ -81,6 +81,22 @@ export class AuthService {
     return this.usersService.findOne(userId);
   }
 
+  async issueAccessTokenForUser(userId: string) {
+    const identity = await this.usersService.findAuthIdentity(userId);
+
+    if (!identity) {
+      throw new UnauthorizedException('Unable to issue access token');
+    }
+
+    const session = await this.authSessionsService.createForUser(identity.id);
+
+    return this.createAccessToken({
+      sub: identity.id,
+      username: identity.username,
+      sid: session.id,
+    });
+  }
+
   private createAccessToken(payload: JwtPayload) {
     return this.jwtService.signAsync(payload);
   }
