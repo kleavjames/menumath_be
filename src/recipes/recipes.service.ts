@@ -19,7 +19,15 @@ import { UpdateRecipeDto } from './dto/update-recipe.dto.js';
 
 const recipeWithIngredientsInclude = {
   ingredients: {
-    include: { ingredient: true },
+    include: {
+      ingredient: {
+        include: {
+          calculationSupplier: true,
+          suppliers: { orderBy: { name: 'asc' as const } },
+        },
+      },
+      ingredientSupplier: true,
+    },
   },
 } as const;
 
@@ -64,19 +72,13 @@ export class RecipesService {
     for (const line of ingredients) {
       this.ensureValidUnit(line.unit);
     }
-    await this.ensureRecipeIngredientsForBusiness(businessId, ingredients);
+    const recipeIngredients = await this.resolveRecipeIngredientLines(
+      businessId,
+      ingredients,
+    );
 
     const recipeSteps = this.normalizeSteps(steps ?? []);
     this.ensureValidSteps(recipeSteps);
-
-    const recipeIngredients = ingredients.map(
-      ({ ingredientId, quantity, pricePerUnit, unit }) => ({
-        ingredientId,
-        quantity,
-        pricePerUnit,
-        unit,
-      }),
-    );
 
     return this.prisma.recipe.create({
       data: {
@@ -149,7 +151,13 @@ export class RecipesService {
       for (const line of ingredients) {
         this.ensureValidUnit(line.unit);
       }
-      await this.ensureRecipeIngredientsForBusiness(
+    }
+
+    let resolvedRecipeIngredients:
+      | Awaited<ReturnType<RecipesService['resolveRecipeIngredientLines']>>
+      | undefined;
+    if (ingredients !== undefined) {
+      resolvedRecipeIngredients = await this.resolveRecipeIngredientLines(
         recipe.businessId,
         ingredients,
       );
@@ -169,18 +177,11 @@ export class RecipesService {
         ...(recipeSteps !== undefined
           ? { steps: this.toRecipeStepsJson(recipeSteps) }
           : {}),
-        ...(ingredients !== undefined
+        ...(resolvedRecipeIngredients !== undefined
           ? {
               ingredients: {
                 deleteMany: {},
-                create: ingredients.map(
-                  ({ ingredientId, quantity, pricePerUnit, unit }) => ({
-                    ingredientId,
-                    quantity,
-                    pricePerUnit,
-                    unit,
-                  }),
-                ),
+                create: resolvedRecipeIngredients,
               },
             }
           : {}),
@@ -237,7 +238,7 @@ export class RecipesService {
     }
   }
 
-  private async ensureRecipeIngredientsForBusiness(
+  private async resolveRecipeIngredientLines(
     businessId: string,
     ingredients: CreateUpdateRecipeIngredientDto[],
   ) {
@@ -247,6 +248,9 @@ export class RecipesService {
         id: { in: ingredientIds },
         businessId,
       },
+      include: {
+        suppliers: { select: { id: true } },
+      },
     });
 
     if (records.length !== ingredientIds.length) {
@@ -254,6 +258,44 @@ export class RecipesService {
         'One or more ingredients were not found or do not belong to this business',
       );
     }
+
+    const ingredientById = new Map(records.map((record) => [record.id, record]));
+
+    return ingredients.map((line) => {
+      const ingredient = ingredientById.get(line.ingredientId);
+      if (!ingredient) {
+        throw new BadRequestException(
+          `Ingredient ${line.ingredientId} was not found for this business`,
+        );
+      }
+
+      const ingredientSupplierId =
+        line.ingredientSupplierId ?? ingredient.calculationSupplierId;
+
+      if (!ingredientSupplierId) {
+        throw new BadRequestException(
+          `Ingredient "${ingredient.name}" has no calculation supplier configured`,
+        );
+      }
+
+      if (
+        !ingredient.suppliers.some(
+          (supplier) => supplier.id === ingredientSupplierId,
+        )
+      ) {
+        throw new BadRequestException(
+          'ingredientSupplierId must belong to the selected ingredient',
+        );
+      }
+
+      return {
+        ingredientId: line.ingredientId,
+        ingredientSupplierId,
+        quantity: line.quantity,
+        pricePerUnit: line.pricePerUnit,
+        unit: line.unit,
+      };
+    });
   }
 
   private ensureValidUnit(unit: Unit) {

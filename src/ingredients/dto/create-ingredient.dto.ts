@@ -1,12 +1,10 @@
-import type { Unit } from '../../generated/prisma/client.js';
+import { IngredientSupplierDto } from './ingredient-supplier.dto.js';
 
 export class CreateIngredientDto {
   businessId: string;
   categoryId: string;
   name: string;
-  supplier: string;
-  itemSize: number;
-  itemSizeUnit: Unit;
-  itemPrice: number;
-  usableCostPerItem: number;
+  suppliers: IngredientSupplierDto[];
+  /** Supplier id to use for recipe cost calculations; defaults to the first supplier if omitted. */
+  calculationSupplierId?: string;
 }
