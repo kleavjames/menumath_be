@@ -30,25 +30,27 @@ export async function recalculateRecipesForIngredient(
   });
 
   for (const recipe of recipes) {
-    const lineCosts: number[] = [];
-
-    for (const line of recipe.ingredients) {
-      const pricePerUnit = computeRecipeLineCost(
+    const pricedLines = recipe.ingredients.map((line) => ({
+      id: line.id,
+      pricePerUnit: computeRecipeLineCost(
         line.quantity,
         line.ingredientSupplier,
-      );
-      lineCosts.push(pricePerUnit);
+      ),
+    }));
 
-      await db.recipeIngredient.update({
-        where: { id: line.id },
-        data: { pricePerUnit },
-      });
-    }
+    await Promise.all(
+      pricedLines.map((line) =>
+        db.recipeIngredient.update({
+          where: { id: line.id },
+          data: { pricePerUnit: line.pricePerUnit },
+        }),
+      ),
+    );
 
     const totals = computeRecipeTotals({
       servings: recipe.servings,
       pricePerServing: recipe.pricePerServing,
-      lineCosts,
+      lineCosts: pricedLines.map((line) => line.pricePerUnit),
     });
 
     await db.recipe.update({

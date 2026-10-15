@@ -170,12 +170,13 @@ export class IngredientsService {
           },
         });
 
-        await recalculateRecipesForIngredient(tx, id);
-
         return tx.ingredient.findUniqueOrThrow({
           where: { id },
           include: ingredientWithSuppliersInclude,
         });
+      }).then(async (updated) => {
+        await recalculateRecipesForIngredient(this.prisma, id);
+        return updated;
       });
     }
 
@@ -190,13 +191,12 @@ export class IngredientsService {
       calculationSupplierId !== undefined &&
       calculationSupplierId !== ingredient.calculationSupplierId;
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (calculationSupplierChanged) {
         await tx.recipeIngredient.updateMany({
           where: { ingredientId: id },
           data: { ingredientSupplierId: calculationSupplierId },
         });
-        await recalculateRecipesForIngredient(tx, id);
       }
 
       return tx.ingredient.update({
@@ -209,6 +209,12 @@ export class IngredientsService {
         include: ingredientWithSuppliersInclude,
       });
     });
+
+    if (calculationSupplierChanged) {
+      await recalculateRecipesForIngredient(this.prisma, id);
+    }
+
+    return updated;
   }
 
   async remove(userId: string, id: string) {
