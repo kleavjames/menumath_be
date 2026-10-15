@@ -6,6 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  computeRecipeLineCost,
+  computeRecipeTotals,
+  decimalToNumber,
+} from '../common/costing.js';
+import {
   CategoryType,
   MemberRole,
   Prisma,
@@ -42,10 +47,6 @@ export class RecipesService {
       name,
       servings,
       pricePerServing,
-      costPerServing,
-      recipeCost,
-      profit,
-      margin,
       ingredients,
       steps,
     } = createRecipeDto;
@@ -68,9 +69,12 @@ export class RecipesService {
 
     await this.ensureOwnerMembership(businessId, userId);
     await this.ensureRecipeCategory(categoryId, businessId);
+    this.ensureValidServings(servings);
+    this.ensureValidPricePerServing(pricePerServing);
     this.ensureUniqueRecipeIngredients(ingredients);
     for (const line of ingredients) {
       this.ensureValidUnit(line.unit);
+      this.ensureValidQuantity(line.quantity);
     }
     const recipeIngredients = await this.resolveRecipeIngredientLines(
       businessId,
@@ -79,6 +83,11 @@ export class RecipesService {
 
     const recipeSteps = this.normalizeSteps(steps ?? []);
     this.ensureValidSteps(recipeSteps);
+    const totals = computeRecipeTotals({
+      servings,
+      pricePerServing,
+      lineCosts: recipeIngredients.map((line) => line.pricePerUnit),
+    });
 
     return this.prisma.recipe.create({
       data: {
@@ -87,10 +96,7 @@ export class RecipesService {
         name,
         servings,
         pricePerServing,
-        costPerServing,
-        recipeCost,
-        profit,
-        margin,
+        ...totals,
         steps: this.toRecipeStepsJson(recipeSteps),
         ingredients: {
           create: recipeIngredients,
@@ -133,12 +139,20 @@ export class RecipesService {
       );
     }
 
-    const { ingredients, steps, ...recipeFields } = updateRecipeDto;
+    const { ingredients, steps, servings, pricePerServing, categoryId, name } =
+      updateRecipeDto;
 
     let recipeSteps: RecipeStepDto[] | undefined;
     if (steps !== undefined) {
       recipeSteps = this.normalizeSteps(steps);
       this.ensureValidSteps(recipeSteps);
+    }
+
+    if (servings !== undefined) {
+      this.ensureValidServings(servings);
+    }
+    if (pricePerServing !== undefined) {
+      this.ensureValidPricePerServing(pricePerServing);
     }
 
     if (ingredients !== undefined) {
@@ -150,6 +164,7 @@ export class RecipesService {
       this.ensureUniqueRecipeIngredients(ingredients);
       for (const line of ingredients) {
         this.ensureValidUnit(line.unit);
+        this.ensureValidQuantity(line.quantity);
       }
     }
 
@@ -163,17 +178,32 @@ export class RecipesService {
       );
     }
 
+    const shouldRecalculate =
+      resolvedRecipeIngredients !== undefined ||
+      servings !== undefined ||
+      pricePerServing !== undefined;
+
+    const totals = shouldRecalculate
+      ? computeRecipeTotals({
+          servings: servings ?? recipe.servings,
+          pricePerServing:
+            pricePerServing ?? decimalToNumber(recipe.pricePerServing),
+          lineCosts:
+            resolvedRecipeIngredients?.map((line) => line.pricePerUnit) ??
+            recipe.ingredients.map((line) =>
+              computeRecipeLineCost(line.quantity, line.ingredientSupplier),
+            ),
+        })
+      : undefined;
+
     return this.prisma.recipe.update({
       where: { id },
       data: {
-        categoryId: recipeFields.categoryId,
-        name: recipeFields.name,
-        servings: recipeFields.servings,
-        pricePerServing: recipeFields.pricePerServing,
-        costPerServing: recipeFields.costPerServing,
-        recipeCost: recipeFields.recipeCost,
-        profit: recipeFields.profit,
-        margin: recipeFields.margin,
+        categoryId,
+        name,
+        servings,
+        pricePerServing,
+        ...totals,
         ...(recipeSteps !== undefined
           ? { steps: this.toRecipeStepsJson(recipeSteps) }
           : {}),
@@ -249,7 +279,7 @@ export class RecipesService {
         businessId,
       },
       include: {
-        suppliers: { select: { id: true } },
+        suppliers: true,
       },
     });
 
@@ -259,7 +289,9 @@ export class RecipesService {
       );
     }
 
-    const ingredientById = new Map(records.map((record) => [record.id, record]));
+    const ingredientById = new Map(
+      records.map((record) => [record.id, record]),
+    );
 
     return ingredients.map((line) => {
       const ingredient = ingredientById.get(line.ingredientId);
@@ -278,11 +310,10 @@ export class RecipesService {
         );
       }
 
-      if (
-        !ingredient.suppliers.some(
-          (supplier) => supplier.id === ingredientSupplierId,
-        )
-      ) {
+      const supplier = ingredient.suppliers.find(
+        (item) => item.id === ingredientSupplierId,
+      );
+      if (!supplier) {
         throw new BadRequestException(
           'ingredientSupplierId must belong to the selected ingredient',
         );
@@ -292,10 +323,30 @@ export class RecipesService {
         ingredientId: line.ingredientId,
         ingredientSupplierId,
         quantity: line.quantity,
-        pricePerUnit: line.pricePerUnit,
+        pricePerUnit: computeRecipeLineCost(line.quantity, supplier),
         unit: line.unit,
       };
     });
+  }
+
+  private ensureValidServings(servings: number) {
+    if (!Number.isInteger(servings) || servings < 1) {
+      throw new BadRequestException(
+        'servings must be an integer of at least 1',
+      );
+    }
+  }
+
+  private ensureValidPricePerServing(pricePerServing: number) {
+    if (!(decimalToNumber(pricePerServing) > 0)) {
+      throw new BadRequestException('pricePerServing must be greater than 0');
+    }
+  }
+
+  private ensureValidQuantity(quantity: number) {
+    if (!(decimalToNumber(quantity) >= 0)) {
+      throw new BadRequestException('quantity must be 0 or greater');
+    }
   }
 
   private ensureValidUnit(unit: Unit) {

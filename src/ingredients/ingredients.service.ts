@@ -5,6 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { storedUsableCostPerItem } from '../common/costing.js';
+import { recalculateRecipesForIngredient } from '../common/recipe-costs.js';
 import { CategoryType, MemberRole, Unit } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateIngredientDto } from './dto/create-ingredient.dto.js';
@@ -23,13 +25,8 @@ export class IngredientsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, createIngredientDto: CreateIngredientDto) {
-    const {
-      businessId,
-      categoryId,
-      name,
-      suppliers,
-      calculationSupplierId,
-    } = createIngredientDto;
+    const { businessId, categoryId, name, suppliers, calculationSupplierId } =
+      createIngredientDto;
 
     if (!businessId) {
       throw new BadRequestException(
@@ -58,13 +55,9 @@ export class IngredientsService {
           categoryId,
           name,
           suppliers: {
-            create: suppliers.map((supplier) => ({
-              name: supplier.name,
-              itemSize: supplier.itemSize,
-              itemSizeUnit: supplier.itemSizeUnit,
-              itemPrice: supplier.itemPrice,
-              usableCostPerItem: supplier.usableCostPerItem,
-            })),
+            create: suppliers.map((supplier) =>
+              this.toSupplierCreateData(supplier),
+            ),
           },
         },
         include: { suppliers: { orderBy: { name: 'asc' } } },
@@ -139,11 +132,7 @@ export class IngredientsService {
             tx.ingredientSupplier.create({
               data: {
                 ingredientId: id,
-                name: supplier.name,
-                itemSize: supplier.itemSize,
-                itemSizeUnit: supplier.itemSizeUnit,
-                itemPrice: supplier.itemPrice,
-                usableCostPerItem: supplier.usableCostPerItem,
+                ...this.toSupplierCreateData(supplier),
               },
             }),
           ),
@@ -181,6 +170,8 @@ export class IngredientsService {
           },
         });
 
+        await recalculateRecipesForIngredient(tx, id);
+
         return tx.ingredient.findUniqueOrThrow({
           where: { id },
           include: ingredientWithSuppliersInclude,
@@ -205,6 +196,7 @@ export class IngredientsService {
           where: { ingredientId: id },
           data: { ingredientSupplierId: calculationSupplierId },
         });
+        await recalculateRecipesForIngredient(tx, id);
       }
 
       return tx.ingredient.update({
@@ -242,10 +234,7 @@ export class IngredientsService {
       const previousIndex = previousSuppliers.findIndex(
         (supplier) => supplier.id === requestedId,
       );
-      if (
-        previousIndex >= 0 &&
-        createdSuppliers[previousIndex] !== undefined
-      ) {
+      if (previousIndex >= 0 && createdSuppliers[previousIndex] !== undefined) {
         return createdSuppliers[previousIndex].id;
       }
 
@@ -283,7 +272,7 @@ export class IngredientsService {
   ) {
     if (!suppliers.some((supplier) => supplier.id === calculationSupplierId)) {
       throw new BadRequestException(
-        'calculationSupplierId must match one of this ingredient\'s suppliers',
+        "calculationSupplierId must match one of this ingredient's suppliers",
       );
     }
   }
@@ -301,9 +290,29 @@ export class IngredientsService {
     return ingredient;
   }
 
+  private toSupplierCreateData(supplier: IngredientSupplierDto) {
+    return {
+      name: supplier.name,
+      itemSize: supplier.itemSize,
+      itemSizeUnit: supplier.itemSizeUnit,
+      itemPrice: supplier.itemPrice,
+      usableCostPerItem: storedUsableCostPerItem(
+        supplier.itemSize,
+        supplier.itemPrice,
+        supplier.itemSizeUnit,
+      ),
+    };
+  }
+
   private ensureValidSuppliers(suppliers: IngredientSupplierDto[]) {
     for (const supplier of suppliers) {
       this.ensureValidUnit(supplier.itemSizeUnit);
+      if (!(supplier.itemSize > 0)) {
+        throw new BadRequestException('Pack size must be greater than 0');
+      }
+      if (!(supplier.itemPrice > 0)) {
+        throw new BadRequestException('Pack price must be greater than 0');
+      }
     }
   }
 

@@ -5,6 +5,5 @@ export class CreateUpdateRecipeIngredientDto {
   /** Which supplier pricing to use; defaults to the ingredient's calculation supplier. */
   ingredientSupplierId?: string;
   quantity: number;
-  pricePerUnit: number;
   unit: Unit;
 }

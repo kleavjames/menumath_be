@@ -5,5 +5,4 @@ export class IngredientSupplierDto {
   itemSize: number;
   itemSizeUnit: Unit;
   itemPrice: number;
-  usableCostPerItem: number;
 }
