@@ -134,34 +134,55 @@ export class IngredientsService {
 
     if (suppliers !== undefined) {
       return this.prisma.$transaction(async (tx) => {
-        const updated = await tx.ingredient.update({
-          where: { id },
-          data: {
-            categoryId: ingredientFields.categoryId,
-            name: ingredientFields.name,
-            calculationSupplierId: null,
-            suppliers: {
-              deleteMany: {},
-              create: suppliers.map((supplier) => ({
+        const createdSuppliers = await Promise.all(
+          suppliers.map((supplier) =>
+            tx.ingredientSupplier.create({
+              data: {
+                ingredientId: id,
                 name: supplier.name,
                 itemSize: supplier.itemSize,
                 itemSizeUnit: supplier.itemSizeUnit,
                 itemPrice: supplier.itemPrice,
                 usableCostPerItem: supplier.usableCostPerItem,
-              })),
-            },
-          },
-          include: { suppliers: { orderBy: { name: 'asc' } } },
-        });
-
-        const resolvedCalculationSupplierId = this.resolveCalculationSupplierId(
-          updated.suppliers,
-          calculationSupplierId,
+              },
+            }),
+          ),
         );
 
-        return tx.ingredient.update({
+        const newSupplierIds = createdSuppliers.map((supplier) => supplier.id);
+        const resolvedCalculationSupplierId =
+          this.resolveCalculationSupplierIdAfterReplace(
+            createdSuppliers,
+            calculationSupplierId,
+            ingredient.suppliers,
+          );
+
+        await tx.recipeIngredient.updateMany({
+          where: {
+            ingredientId: id,
+            ingredientSupplierId: { notIn: newSupplierIds },
+          },
+          data: { ingredientSupplierId: resolvedCalculationSupplierId },
+        });
+
+        await tx.ingredient.update({
           where: { id },
-          data: { calculationSupplierId: resolvedCalculationSupplierId },
+          data: {
+            categoryId: ingredientFields.categoryId,
+            name: ingredientFields.name,
+            calculationSupplierId: resolvedCalculationSupplierId,
+          },
+        });
+
+        await tx.ingredientSupplier.deleteMany({
+          where: {
+            ingredientId: id,
+            id: { notIn: newSupplierIds },
+          },
+        });
+
+        return tx.ingredient.findUniqueOrThrow({
+          where: { id },
           include: ingredientWithSuppliersInclude,
         });
       });
@@ -174,14 +195,27 @@ export class IngredientsService {
       );
     }
 
-    return this.prisma.ingredient.update({
-      where: { id },
-      data: {
-        categoryId: ingredientFields.categoryId,
-        name: ingredientFields.name,
-        calculationSupplierId,
-      },
-      include: ingredientWithSuppliersInclude,
+    const calculationSupplierChanged =
+      calculationSupplierId !== undefined &&
+      calculationSupplierId !== ingredient.calculationSupplierId;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (calculationSupplierChanged) {
+        await tx.recipeIngredient.updateMany({
+          where: { ingredientId: id },
+          data: { ingredientSupplierId: calculationSupplierId },
+        });
+      }
+
+      return tx.ingredient.update({
+        where: { id },
+        data: {
+          categoryId: ingredientFields.categoryId,
+          name: ingredientFields.name,
+          calculationSupplierId,
+        },
+        include: ingredientWithSuppliersInclude,
+      });
     });
   }
 
@@ -193,6 +227,35 @@ export class IngredientsService {
       where: { id },
       include: ingredientWithSuppliersInclude,
     });
+  }
+
+  private resolveCalculationSupplierIdAfterReplace(
+    createdSuppliers: { id: string }[],
+    requestedId: string | undefined,
+    previousSuppliers: { id: string }[],
+  ): string {
+    if (requestedId !== undefined) {
+      if (createdSuppliers.some((supplier) => supplier.id === requestedId)) {
+        return requestedId;
+      }
+
+      const previousIndex = previousSuppliers.findIndex(
+        (supplier) => supplier.id === requestedId,
+      );
+      if (
+        previousIndex >= 0 &&
+        createdSuppliers[previousIndex] !== undefined
+      ) {
+        return createdSuppliers[previousIndex].id;
+      }
+
+      this.ensureCalculationSupplierBelongsToIngredient(
+        requestedId,
+        createdSuppliers,
+      );
+    }
+
+    return this.resolveCalculationSupplierId(createdSuppliers, undefined);
   }
 
   private resolveCalculationSupplierId(
