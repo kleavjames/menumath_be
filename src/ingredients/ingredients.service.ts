@@ -6,7 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { storedUsableCostPerItem } from '../common/costing.js';
-import { recalculateRecipesForIngredient } from '../common/recipe-costs.js';
+import {
+  recalculateRecipesByIds,
+  recalculateRecipesForIngredient,
+} from '../common/recipe-costs.js';
 import { CategoryType, MemberRole, Unit } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateIngredientDto } from './dto/create-ingredient.dto.js';
@@ -221,9 +224,23 @@ export class IngredientsService {
     const ingredient = await this.getIngredientOrThrow(id);
     await this.ensureOwnerMembership(ingredient.businessId, userId);
 
-    return this.prisma.ingredient.delete({
-      where: { id },
-      include: ingredientWithSuppliersInclude,
+    return this.prisma.$transaction(async (tx) => {
+      const affected = await tx.recipeIngredient.findMany({
+        where: { ingredientId: id },
+        select: { recipeId: true },
+      });
+      const recipeIds = [...new Set(affected.map((row) => row.recipeId))];
+
+      await tx.recipeIngredient.deleteMany({
+        where: { ingredientId: id },
+      });
+
+      await recalculateRecipesByIds(tx, recipeIds);
+
+      return tx.ingredient.delete({
+        where: { id },
+        include: ingredientWithSuppliersInclude,
+      });
     });
   }
 

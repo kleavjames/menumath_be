@@ -6,6 +6,41 @@ type RecipeCostDb = Pick<
   'recipe' | 'recipeIngredient'
 >;
 
+/** Recompute stored recipe totals from existing line `pricePerUnit` values. */
+export async function recalculateRecipesByIds(
+  db: RecipeCostDb,
+  recipeIds: string[],
+) {
+  if (recipeIds.length === 0) {
+    return;
+  }
+
+  const recipes = await db.recipe.findMany({
+    where: { id: { in: recipeIds } },
+    select: {
+      id: true,
+      servings: true,
+      pricePerServing: true,
+      ingredients: { select: { pricePerUnit: true } },
+    },
+  });
+
+  await Promise.all(
+    recipes.map((recipe) => {
+      const totals = computeRecipeTotals({
+        servings: recipe.servings,
+        pricePerServing: recipe.pricePerServing,
+        lineCosts: recipe.ingredients.map((line) => line.pricePerUnit),
+      });
+
+      return db.recipe.update({
+        where: { id: recipe.id },
+        data: totals,
+      });
+    }),
+  );
+}
+
 export async function recalculateRecipesForIngredient(
   db: RecipeCostDb,
   ingredientId: string,
@@ -29,33 +64,21 @@ export async function recalculateRecipesForIngredient(
     },
   });
 
-  for (const recipe of recipes) {
-    const pricedLines = recipe.ingredients.map((line) => ({
-      id: line.id,
-      pricePerUnit: computeRecipeLineCost(
-        line.quantity,
-        line.ingredientSupplier,
-      ),
-    }));
-
-    await Promise.all(
-      pricedLines.map((line) =>
+  await Promise.all(
+    recipes.flatMap((recipe) =>
+      recipe.ingredients.map((line) =>
         db.recipeIngredient.update({
           where: { id: line.id },
-          data: { pricePerUnit: line.pricePerUnit },
+          data: {
+            pricePerUnit: computeRecipeLineCost(
+              line.quantity,
+              line.ingredientSupplier,
+            ),
+          },
         }),
       ),
-    );
+    ),
+  );
 
-    const totals = computeRecipeTotals({
-      servings: recipe.servings,
-      pricePerServing: recipe.pricePerServing,
-      lineCosts: pricedLines.map((line) => line.pricePerUnit),
-    });
-
-    await db.recipe.update({
-      where: { id: recipe.id },
-      data: totals,
-    });
-  }
+  await recalculateRecipesByIds(db, recipeIds);
 }
