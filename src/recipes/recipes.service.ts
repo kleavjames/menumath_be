@@ -6,6 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  computeRecipeLineCost,
+  computeRecipeTotals,
+  decimalToNumber,
+} from '../common/costing.js';
+import {
   CategoryType,
   MemberRole,
   Prisma,
@@ -19,7 +24,15 @@ import { UpdateRecipeDto } from './dto/update-recipe.dto.js';
 
 const recipeWithIngredientsInclude = {
   ingredients: {
-    include: { ingredient: true },
+    include: {
+      ingredient: {
+        include: {
+          calculationSupplier: true,
+          suppliers: { orderBy: { name: 'asc' as const } },
+        },
+      },
+      ingredientSupplier: true,
+    },
   },
 } as const;
 
@@ -34,10 +47,6 @@ export class RecipesService {
       name,
       servings,
       pricePerServing,
-      costPerServing,
-      recipeCost,
-      profit,
-      margin,
       ingredients,
       steps,
     } = createRecipeDto;
@@ -60,23 +69,25 @@ export class RecipesService {
 
     await this.ensureOwnerMembership(businessId, userId);
     await this.ensureRecipeCategory(categoryId, businessId);
+    this.ensureValidServings(servings);
+    this.ensureValidPricePerServing(pricePerServing);
     this.ensureUniqueRecipeIngredients(ingredients);
     for (const line of ingredients) {
       this.ensureValidUnit(line.unit);
+      this.ensureValidQuantity(line.quantity);
     }
-    await this.ensureRecipeIngredientsForBusiness(businessId, ingredients);
+    const recipeIngredients = await this.resolveRecipeIngredientLines(
+      businessId,
+      ingredients,
+    );
 
     const recipeSteps = this.normalizeSteps(steps ?? []);
     this.ensureValidSteps(recipeSteps);
-
-    const recipeIngredients = ingredients.map(
-      ({ ingredientId, quantity, pricePerUnit, unit }) => ({
-        ingredientId,
-        quantity,
-        pricePerUnit,
-        unit,
-      }),
-    );
+    const totals = computeRecipeTotals({
+      servings,
+      pricePerServing,
+      lineCosts: recipeIngredients.map((line) => line.pricePerUnit),
+    });
 
     return this.prisma.recipe.create({
       data: {
@@ -85,10 +96,7 @@ export class RecipesService {
         name,
         servings,
         pricePerServing,
-        costPerServing,
-        recipeCost,
-        profit,
-        margin,
+        ...totals,
         steps: this.toRecipeStepsJson(recipeSteps),
         ingredients: {
           create: recipeIngredients,
@@ -131,12 +139,20 @@ export class RecipesService {
       );
     }
 
-    const { ingredients, steps, ...recipeFields } = updateRecipeDto;
+    const { ingredients, steps, servings, pricePerServing, categoryId, name } =
+      updateRecipeDto;
 
     let recipeSteps: RecipeStepDto[] | undefined;
     if (steps !== undefined) {
       recipeSteps = this.normalizeSteps(steps);
       this.ensureValidSteps(recipeSteps);
+    }
+
+    if (servings !== undefined) {
+      this.ensureValidServings(servings);
+    }
+    if (pricePerServing !== undefined) {
+      this.ensureValidPricePerServing(pricePerServing);
     }
 
     if (ingredients !== undefined) {
@@ -148,39 +164,54 @@ export class RecipesService {
       this.ensureUniqueRecipeIngredients(ingredients);
       for (const line of ingredients) {
         this.ensureValidUnit(line.unit);
+        this.ensureValidQuantity(line.quantity);
       }
-      await this.ensureRecipeIngredientsForBusiness(
+    }
+
+    let resolvedRecipeIngredients:
+      | Awaited<ReturnType<RecipesService['resolveRecipeIngredientLines']>>
+      | undefined;
+    if (ingredients !== undefined) {
+      resolvedRecipeIngredients = await this.resolveRecipeIngredientLines(
         recipe.businessId,
         ingredients,
       );
     }
 
+    const shouldRecalculate =
+      resolvedRecipeIngredients !== undefined ||
+      servings !== undefined ||
+      pricePerServing !== undefined;
+
+    const totals = shouldRecalculate
+      ? computeRecipeTotals({
+          servings: servings ?? recipe.servings,
+          pricePerServing:
+            pricePerServing ?? decimalToNumber(recipe.pricePerServing),
+          lineCosts:
+            resolvedRecipeIngredients?.map((line) => line.pricePerUnit) ??
+            recipe.ingredients.map((line) =>
+              computeRecipeLineCost(line.quantity, line.ingredientSupplier),
+            ),
+        })
+      : undefined;
+
     return this.prisma.recipe.update({
       where: { id },
       data: {
-        categoryId: recipeFields.categoryId,
-        name: recipeFields.name,
-        servings: recipeFields.servings,
-        pricePerServing: recipeFields.pricePerServing,
-        costPerServing: recipeFields.costPerServing,
-        recipeCost: recipeFields.recipeCost,
-        profit: recipeFields.profit,
-        margin: recipeFields.margin,
+        categoryId,
+        name,
+        servings,
+        pricePerServing,
+        ...totals,
         ...(recipeSteps !== undefined
           ? { steps: this.toRecipeStepsJson(recipeSteps) }
           : {}),
-        ...(ingredients !== undefined
+        ...(resolvedRecipeIngredients !== undefined
           ? {
               ingredients: {
                 deleteMany: {},
-                create: ingredients.map(
-                  ({ ingredientId, quantity, pricePerUnit, unit }) => ({
-                    ingredientId,
-                    quantity,
-                    pricePerUnit,
-                    unit,
-                  }),
-                ),
+                create: resolvedRecipeIngredients,
               },
             }
           : {}),
@@ -237,7 +268,7 @@ export class RecipesService {
     }
   }
 
-  private async ensureRecipeIngredientsForBusiness(
+  private async resolveRecipeIngredientLines(
     businessId: string,
     ingredients: CreateUpdateRecipeIngredientDto[],
   ) {
@@ -247,12 +278,74 @@ export class RecipesService {
         id: { in: ingredientIds },
         businessId,
       },
+      include: {
+        suppliers: true,
+      },
     });
 
     if (records.length !== ingredientIds.length) {
       throw new BadRequestException(
         'One or more ingredients were not found or do not belong to this business',
       );
+    }
+
+    const ingredientById = new Map(
+      records.map((record) => [record.id, record]),
+    );
+
+    return ingredients.map((line) => {
+      const ingredient = ingredientById.get(line.ingredientId);
+      if (!ingredient) {
+        throw new BadRequestException(
+          `Ingredient ${line.ingredientId} was not found for this business`,
+        );
+      }
+
+      const ingredientSupplierId =
+        line.ingredientSupplierId ?? ingredient.calculationSupplierId;
+
+      if (!ingredientSupplierId) {
+        throw new BadRequestException(
+          `Ingredient "${ingredient.name}" has no calculation supplier configured`,
+        );
+      }
+
+      const supplier = ingredient.suppliers.find(
+        (item) => item.id === ingredientSupplierId,
+      );
+      if (!supplier) {
+        throw new BadRequestException(
+          'ingredientSupplierId must belong to the selected ingredient',
+        );
+      }
+
+      return {
+        ingredientId: line.ingredientId,
+        ingredientSupplierId,
+        quantity: line.quantity,
+        pricePerUnit: computeRecipeLineCost(line.quantity, supplier),
+        unit: line.unit,
+      };
+    });
+  }
+
+  private ensureValidServings(servings: number) {
+    if (!Number.isInteger(servings) || servings < 1) {
+      throw new BadRequestException(
+        'servings must be an integer of at least 1',
+      );
+    }
+  }
+
+  private ensureValidPricePerServing(pricePerServing: number) {
+    if (!(decimalToNumber(pricePerServing) > 0)) {
+      throw new BadRequestException('pricePerServing must be greater than 0');
+    }
+  }
+
+  private ensureValidQuantity(quantity: number) {
+    if (!(decimalToNumber(quantity) >= 0)) {
+      throw new BadRequestException('quantity must be 0 or greater');
     }
   }
 

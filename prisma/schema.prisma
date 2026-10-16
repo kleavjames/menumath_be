@@ -156,11 +156,29 @@ model Category {
 }
 
 model Ingredient {
+  id                    String   @id @default(cuid())
+  businessId            String
+  categoryId            String
+  name                  String
+  calculationSupplierId String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  business            Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category            Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  calculationSupplier IngredientSupplier?  @relation("IngredientCalculationSupplier", fields: [calculationSupplierId], references: [id], onDelete: SetNull)
+  recipes             RecipeIngredient[]
+  suppliers           IngredientSupplier[] @relation("IngredientSuppliers")
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([calculationSupplierId])
+}
+
+model IngredientSupplier {
   id                String   @id @default(cuid())
-  businessId        String
-  categoryId        String
+  ingredientId      String
   name              String
-  supplier          String
   itemSize          Decimal  @db.Decimal(12, 4)
   itemSizeUnit      Unit
   itemPrice         Decimal  @db.Decimal(12, 4)
@@ -168,12 +186,11 @@ model Ingredient {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  category Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  recipes  RecipeIngredient[]
+  ingredient         Ingredient         @relation("IngredientSuppliers", fields: [ingredientId], references: [id], onDelete: Cascade)
+  calculationFor     Ingredient[]       @relation("IngredientCalculationSupplier")
+  recipeIngredients  RecipeIngredient[]
 
-  @@index([businessId])
-  @@index([categoryId])
+  @@index([ingredientId])
 }
 
 model Recipe {
@@ -200,17 +217,20 @@ model Recipe {
 }
 
 model RecipeIngredient {
-  id           String  @id @default(cuid())
-  recipeId     String
-  ingredientId String
-  quantity     Decimal @db.Decimal(12, 4)
-  pricePerUnit Decimal @db.Decimal(12, 4)
-  unit         Unit
+  id                   String  @id @default(cuid())
+  recipeId             String
+  ingredientId         String
+  ingredientSupplierId String
+  quantity             Decimal @db.Decimal(12, 4)
+  pricePerUnit         Decimal @db.Decimal(12, 4)
+  unit                 Unit
 
-  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  recipe             Recipe             @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient         Ingredient         @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientSupplier IngredientSupplier @relation(fields: [ingredientSupplierId], references: [id], onDelete: Restrict)
 
   @@unique([recipeId, ingredientId])
   @@index([recipeId])
   @@index([ingredientId])
+  @@index([ingredientSupplierId])
 }

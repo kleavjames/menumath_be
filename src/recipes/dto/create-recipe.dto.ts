@@ -7,10 +7,6 @@ export class CreateRecipeDto {
   name: string;
   servings: number;
   pricePerServing: number;
-  costPerServing: number;
-  recipeCost: number;
-  profit: number;
-  margin: number;
   ingredients: CreateUpdateRecipeIngredientDto[];
   steps?: RecipeStepDto[];
 }
