@@ -239,7 +239,7 @@ describe('InvitationService', () => {
         }),
       ).rejects.toThrow(
         new BadRequestException(
-          'deviceId is required and must be 1-128 characters',
+          'deviceId is required',
         ),
       );
       expect(prisma.$transaction).not.toHaveBeenCalled();
