@@ -18,12 +18,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      ignoreExpiration: false,
+      ignoreExpiration: true,
       secretOrKey: secret,
     });
   }
 
   async validate(payload: JwtPayload): Promise<AuthUser> {
+    if (!payload?.sub || !payload.sid || !payload.deviceId) {
+      throw new UnauthorizedException();
+    }
+
     const user = await this.usersService.findAuthIdentity(payload.sub);
 
     if (!user) {
@@ -33,6 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const session = await this.authSessionsService.findValidSession(
       payload.sid,
       payload.sub,
+      payload.deviceId,
     );
 
     if (!session) {

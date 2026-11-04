@@ -3,4 +3,5 @@ export class AcceptInvitationDto {
   fullName?: string;
   username?: string;
   password?: string;
+  deviceId?: string;
 }

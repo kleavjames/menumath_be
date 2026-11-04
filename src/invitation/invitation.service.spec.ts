@@ -178,6 +178,7 @@ describe('InvitationService', () => {
         updatedAt: user.updatedAt,
       });
       expect(result.business).toEqual(business);
+      expect(authService.issueAccessTokenForUser).not.toHaveBeenCalled();
     });
 
     it('creates a new user and issues a token', async () => {
@@ -210,6 +211,7 @@ describe('InvitationService', () => {
         fullName: 'Sam Lee',
         username: 'sam',
         password: 'password1',
+        deviceId: '  device-1  ',
       });
 
       expect(result).toMatchObject({
@@ -218,6 +220,30 @@ describe('InvitationService', () => {
         business,
       });
       expect(result.user).not.toHaveProperty('passwordHash');
+      expect(authService.issueAccessTokenForUser).toHaveBeenCalledWith(
+        user.id,
+        'device-1',
+      );
+    });
+
+    it('requires deviceId before creating a new user', async () => {
+      prisma.invitationCode.findUnique.mockResolvedValue(invitation);
+
+      await expect(
+        service.accept({
+          code: 'ABCD23',
+          fullName: 'Sam Lee',
+          username: 'sam',
+          password: 'password1',
+          deviceId: '',
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'deviceId is required and must be 1-128 characters',
+        ),
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(authService.issueAccessTokenForUser).not.toHaveBeenCalled();
     });
 
     it('rejects expired codes', async () => {
