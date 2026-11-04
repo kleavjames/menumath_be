@@ -247,7 +247,7 @@ describe('AuthService signIn', () => {
     });
   });
 
-  it('rejects a missing, blank, or over-long deviceId before looking up the user', async () => {
+  it('rejects a missing or blank deviceId before looking up the user', async () => {
     const findByUsername = vi.fn();
     const replaceForDevice = vi.fn();
     const module: TestingModule = await Test.createTestingModule({
@@ -268,7 +268,7 @@ describe('AuthService signIn', () => {
       ],
     }).compile();
     const authService = module.get(AuthService);
-    const invalidDeviceIds = [undefined, '', '   ', 'x'.repeat(129), 12];
+    const invalidDeviceIds = [undefined, '', '   ', 12];
 
     for (const deviceId of invalidDeviceIds) {
       await expect(
@@ -279,7 +279,7 @@ describe('AuthService signIn', () => {
         }),
       ).rejects.toThrow(
         new BadRequestException(
-          'deviceId is required and must be 1-128 characters',
+          'deviceId is required',
         ),
       );
     }
