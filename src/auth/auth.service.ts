@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { verifyPassword } from '../common/password.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthSessionsService } from './auth-sessions.service.js';
+import { requireDeviceId } from './device-id.js';
 import { SignInDto } from './dto/sign-in.dto.js';
 import { SignUpDto } from './dto/sign-up.dto.js';
 import type { JwtPayload } from './types/auth-user.js';
@@ -16,6 +17,7 @@ export class AuthService {
   ) {}
 
   async signUp(signUpDto: SignUpDto) {
+    const deviceId = requireDeviceId(signUpDto.deviceId);
     const account = await this.usersService.createOwnerAccount(signUpDto);
     const identity = await this.usersService.findAuthIdentity(account.user.id);
 
@@ -23,12 +25,16 @@ export class AuthService {
       throw new UnauthorizedException('Unable to issue access token');
     }
 
-    const session = await this.authSessionsService.createForUser(identity.id);
+    const session = await this.authSessionsService.replaceForDevice(
+      identity.id,
+      deviceId,
+    );
 
     const accessToken = await this.createAccessToken({
       sub: identity.id,
       username: identity.username,
       sid: session.id,
+      deviceId,
     });
 
     const { members: _, ...business } = account.business;
@@ -42,6 +48,7 @@ export class AuthService {
   }
 
   async signIn(signInDto: SignInDto) {
+    const deviceId = requireDeviceId(signInDto.deviceId);
     const user = await this.usersService.findByUsername(signInDto.username);
 
     if (!user) {
@@ -65,12 +72,16 @@ export class AuthService {
       throw new UnauthorizedException('User is not a member of a business');
     }
 
-    const session = await this.authSessionsService.createForUser(user.id);
+    const session = await this.authSessionsService.replaceForDevice(
+      user.id,
+      deviceId,
+    );
 
     const accessToken = await this.createAccessToken({
       sub: user.id,
       username: user.username,
       sid: session.id,
+      deviceId,
     });
 
     const { business, ...membershipWithoutBusiness } = membership;
@@ -100,19 +111,24 @@ export class AuthService {
     return this.usersService.findOne(userId);
   }
 
-  async issueAccessTokenForUser(userId: string) {
+  async issueAccessTokenForUser(userId: string, deviceId: string) {
+    const boundDeviceId = requireDeviceId(deviceId);
     const identity = await this.usersService.findAuthIdentity(userId);
 
     if (!identity) {
       throw new UnauthorizedException('Unable to issue access token');
     }
 
-    const session = await this.authSessionsService.createForUser(identity.id);
+    const session = await this.authSessionsService.replaceForDevice(
+      identity.id,
+      boundDeviceId,
+    );
 
     return this.createAccessToken({
       sub: identity.id,
       username: identity.username,
       sid: session.id,
+      deviceId: boundDeviceId,
     });
   }
 

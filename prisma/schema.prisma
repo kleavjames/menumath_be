@@ -82,10 +82,12 @@ model User {
 model AuthSession {
   id        String   @id @default(cuid())
   userId    String
+  deviceId  String
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, deviceId])
   @@index([userId])
 }
 

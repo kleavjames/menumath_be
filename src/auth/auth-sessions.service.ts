@@ -5,27 +5,40 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class AuthSessionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  createForUser(userId: string) {
-    return this.prisma.authSession.create({
-      data: {
-        userId,
-      },
-      select: {
-        id: true,
-        userId: true,
-      },
+  replaceForDevice(userId: string, deviceId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.authSession.deleteMany({
+        where: {
+          userId,
+          deviceId,
+        },
+      });
+
+      return tx.authSession.create({
+        data: {
+          userId,
+          deviceId,
+        },
+        select: {
+          id: true,
+          userId: true,
+          deviceId: true,
+        },
+      });
     });
   }
 
-  findValidSession(sessionId: string, userId: string) {
+  findValidSession(sessionId: string, userId: string, deviceId: string) {
     return this.prisma.authSession.findFirst({
       where: {
         id: sessionId,
         userId,
+        deviceId,
       },
       select: {
         id: true,
         userId: true,
+        deviceId: true,
       },
     });
   }

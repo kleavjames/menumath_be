@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { AuthService } from '../auth/auth.service.js';
+import { requireDeviceId } from '../auth/device-id.js';
 import type { AuthUser } from '../auth/types/auth-user.js';
 import { hashPassword } from '../common/password.js';
 import {
@@ -111,6 +112,7 @@ export class InvitationService {
     acceptInvitationDto: AcceptInvitationDto,
     invitation: InvitationWithBusiness,
   ) {
+    const deviceId = requireDeviceId(acceptInvitationDto.deviceId);
     const { fullName, username, password } = acceptInvitationDto;
 
     if (!fullName || fullName.trim().length === 0) {
@@ -165,6 +167,7 @@ export class InvitationService {
 
     const accessToken = await this.authService.issueAccessTokenForUser(
       result.user.id,
+      deviceId,
     );
 
     return {
